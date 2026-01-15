@@ -383,6 +383,18 @@ watch(() => props.constraints, () => {
   }
 }, { deep: true })
 
+// Watch for prompt changes - redraw after spaces (word boundaries)
+watch(() => props.prompt, (newVal, oldVal) => {
+  // Redraw when space is typed (end of word)
+  if (newVal && newVal.endsWith(' ') && p5Instance) {
+    p5Instance.redraw()
+  }
+  // Also redraw when prompt is cleared
+  if (!newVal && oldVal && p5Instance) {
+    p5Instance.redraw()
+  }
+})
+
 // Save current iteration
 async function saveIteration() {
   if (isSaving.value) return
