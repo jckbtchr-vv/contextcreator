@@ -154,7 +154,7 @@ async function handleFontUpload(event) {
 .constraints {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: var(--space-md);
 }
 
 .section-title {

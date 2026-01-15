@@ -15,11 +15,11 @@
   --font-mono: 'Departure Mono', monospace;
 
   /* Spacing */
-  --space-xs: 4px;
-  --space-sm: 8px;
-  --space-md: 12px;
-  --space-lg: 16px;
-  --space-xl: 24px;
+  --space-xs: 6px;
+  --space-sm: 10px;
+  --space-md: 14px;
+  --space-lg: 20px;
+  --space-xl: 28px;
 
   /* Transitions */
   --transition-fast: 100ms ease;
