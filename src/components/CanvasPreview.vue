@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed, reactive } from 'vue'
 import p5 from 'p5'
 import { generateP5Code } from '../services/geminiService'
 
@@ -10,25 +10,148 @@ const props = defineProps({
   apiKey: String
 })
 
-const emit = defineEmits(['canvas-ready'])
+const emit = defineEmits(['canvas-ready', 'save'])
 
 const canvasContainer = ref(null)
+const canvasWrapper = ref(null)
 const isGenerating = ref(false)
-const currentVisual = ref('ai') // 'text', 'ai', 'grid', 'wave'
 const aiGeneratedCode = ref('')
 const aiError = ref('')
 
+// Save state
+const saveName = ref('')
+const isSaving = ref(false)
+
+// History of generated visuals
+const generationHistory = ref([])
+const historyIndex = ref(-1)
+
+// Labels system
+const labels = ref([])
+const selectedLabel = ref(null)
+const editingLabel = ref(null)
+const isDragging = ref(false)
+const isResizing = ref(false)
+const dragStart = reactive({ x: 0, y: 0 })
+const labelStart = reactive({ x: 0, y: 0, scale: 1 })
+
 let p5Instance = null
 
-// Visual generation modes
-const visualModes = [
-  { id: 'ai', name: 'AI Generated', icon: '✦' },
-  { id: 'text', name: 'Text', icon: 'T' },
-  { id: 'grid', name: 'Grid', icon: '▦' },
-  { id: 'wave', name: 'Wave', icon: '∿' },
-  { id: 'circles', name: 'Circles', icon: '◎' },
-  { id: 'lines', name: 'Lines', icon: '≡' }
-]
+// Computed properties for history navigation
+const canGoBack = computed(() => historyIndex.value > 0)
+const canGoForward = computed(() => historyIndex.value < generationHistory.value.length - 1)
+
+// Add a new label
+function addLabel() {
+  const newLabel = {
+    id: Date.now(),
+    text: 'LABEL',
+    x: 50, // percentage
+    y: 50,
+    scale: 1,
+    align: 'center'
+  }
+  labels.value.push(newLabel)
+  selectedLabel.value = newLabel.id
+  editingLabel.value = newLabel.id
+}
+
+// Delete selected label
+function deleteLabel(id) {
+  labels.value = labels.value.filter(l => l.id !== id)
+  if (selectedLabel.value === id) {
+    selectedLabel.value = null
+  }
+}
+
+// Start dragging a label
+function startDrag(e, label) {
+  if (editingLabel.value === label.id) return
+  e.preventDefault()
+  selectedLabel.value = label.id
+  isDragging.value = true
+  dragStart.x = e.clientX
+  dragStart.y = e.clientY
+  labelStart.x = label.x
+  labelStart.y = label.y
+
+  document.addEventListener('mousemove', onDrag)
+  document.addEventListener('mouseup', stopDrag)
+}
+
+function onDrag(e) {
+  if (!isDragging.value || !canvasWrapper.value) return
+
+  const rect = canvasWrapper.value.getBoundingClientRect()
+  const dx = ((e.clientX - dragStart.x) / rect.width) * 100
+  const dy = ((e.clientY - dragStart.y) / rect.height) * 100
+
+  const label = labels.value.find(l => l.id === selectedLabel.value)
+  if (label) {
+    label.x = Math.max(0, Math.min(100, labelStart.x + dx))
+    label.y = Math.max(0, Math.min(100, labelStart.y + dy))
+  }
+}
+
+function stopDrag() {
+  isDragging.value = false
+  document.removeEventListener('mousemove', onDrag)
+  document.removeEventListener('mouseup', stopDrag)
+}
+
+// Start resizing a label
+function startResize(e, label) {
+  e.preventDefault()
+  e.stopPropagation()
+  selectedLabel.value = label.id
+  isResizing.value = true
+  dragStart.x = e.clientX
+  labelStart.scale = label.scale
+
+  document.addEventListener('mousemove', onResize)
+  document.addEventListener('mouseup', stopResize)
+}
+
+function onResize(e) {
+  if (!isResizing.value) return
+
+  const dx = e.clientX - dragStart.x
+  const scaleDelta = dx / 100
+
+  const label = labels.value.find(l => l.id === selectedLabel.value)
+  if (label) {
+    label.scale = Math.max(0.5, Math.min(4, labelStart.scale + scaleDelta))
+  }
+}
+
+function stopResize() {
+  isResizing.value = false
+  document.removeEventListener('mousemove', onResize)
+  document.removeEventListener('mouseup', stopResize)
+}
+
+// Update label text
+function updateLabelText(e, label) {
+  label.text = e.target.innerText || 'LABEL'
+}
+
+// Finish editing label
+function finishEditing() {
+  editingLabel.value = null
+}
+
+// Start editing label on double click
+function startEditing(label) {
+  editingLabel.value = label.id
+  selectedLabel.value = label.id
+}
+
+// Cycle alignment
+function cycleAlign(label) {
+  const aligns = ['left', 'center', 'right']
+  const idx = aligns.indexOf(label.align)
+  label.align = aligns[(idx + 1) % aligns.length]
+}
 
 // Parse hex color to RGB
 function hexToRgb(hex) {
@@ -66,84 +189,28 @@ function createSketch() {
       p.fill(fg.r, fg.g, fg.b)
       p.stroke(fg.r, fg.g, fg.b)
 
-      switch (currentVisual.value) {
-        case 'text':
-          drawTextVisual(p, fg)
-          break
-        case 'ai':
-          drawAIVisual(p, fg, bg)
-          break
-        case 'grid':
-          drawGridVisual(p, fg)
-          break
-        case 'wave':
-          drawWaveVisual(p, fg)
-          break
-        case 'circles':
-          drawCirclesVisual(p, fg)
-          break
-        case 'lines':
-          drawLinesVisual(p, fg)
-          break
-      }
-    }
-
-    function drawTextVisual(p, fg) {
-      p.noStroke()
-      p.textAlign(p.CENTER, p.CENTER)
-
-      const text = props.prompt || 'Your text here'
-      const lines = text.split('\n')
-      const maxWidth = p.width * 0.8
-
-      // Calculate font size to fit
-      let fontSize = 72
-      p.textSize(fontSize)
-
-      // Find appropriate font size
-      for (let line of lines) {
-        while (p.textWidth(line) > maxWidth && fontSize > 12) {
-          fontSize -= 2
-          p.textSize(fontSize)
-        }
-      }
-
-      const lineHeight = fontSize * 1.3
-      const totalHeight = lines.length * lineHeight
-      const startY = (p.height - totalHeight) / 2 + lineHeight / 2
-
-      lines.forEach((line, i) => {
-        p.text(line, p.width / 2, startY + i * lineHeight)
-      })
+      drawAIVisual(p, fg, bg)
     }
 
     function drawAIVisual(p, fg, bg) {
-      // If we have AI-generated code, execute it
       if (aiGeneratedCode.value) {
         try {
-          // Create a safe execution context
           const drawFunc = new Function('p', aiGeneratedCode.value)
           drawFunc(p)
         } catch (err) {
-          // If execution fails, show error state
           console.error('AI code execution error:', err)
-          drawPlaceholder(p, fg, 'Error rendering AI visual')
+          drawPlaceholder(p, fg, 'Error rendering')
         }
       } else if (isGenerating.value) {
-        // Show loading state
         drawPlaceholder(p, fg, 'Generating...')
       } else if (aiError.value) {
-        // Show error message
         drawPlaceholder(p, fg, aiError.value)
       } else if (!props.apiKey) {
-        // No API key
-        drawPlaceholder(p, fg, 'Enter API key to generate')
+        drawPlaceholder(p, fg, 'Enter API key')
       } else if (!props.prompt) {
-        // No prompt
-        drawPlaceholder(p, fg, 'Enter a prompt to generate')
+        drawPlaceholder(p, fg, 'Enter prompt')
       } else {
-        // Ready to generate
-        drawPlaceholder(p, fg, 'Click Generate to create visual')
+        drawPlaceholder(p, fg, 'Click Generate')
       }
     }
 
@@ -151,132 +218,8 @@ function createSketch() {
       p.noStroke()
       p.fill(fg.r, fg.g, fg.b, 100)
       p.textAlign(p.CENTER, p.CENTER)
-      p.textSize(18)
+      p.textSize(14)
       p.text(message, p.width / 2, p.height / 2)
-    }
-
-    function drawGridVisual(p, fg) {
-      const cols = 8
-      const rows = 8
-      const cellWidth = p.width / cols
-      const cellHeight = p.height / rows
-      const padding = 8
-
-      p.noFill()
-      p.strokeWeight(1)
-
-      for (let i = 0; i < cols; i++) {
-        for (let j = 0; j < rows; j++) {
-          const x = i * cellWidth + padding
-          const y = j * cellHeight + padding
-          const w = cellWidth - padding * 2
-          const h = cellHeight - padding * 2
-
-          // Vary the visual based on position
-          const variant = (i + j) % 4
-
-          if (variant === 0) {
-            p.rect(x, y, w, h)
-          } else if (variant === 1) {
-            p.ellipse(x + w/2, y + h/2, w * 0.8, h * 0.8)
-          } else if (variant === 2) {
-            p.line(x, y, x + w, y + h)
-            p.line(x + w, y, x, y + h)
-          } else {
-            p.line(x, y + h/2, x + w, y + h/2)
-            p.line(x + w/2, y, x + w/2, y + h)
-          }
-        }
-      }
-    }
-
-    function drawWaveVisual(p, fg) {
-      p.noFill()
-      p.strokeWeight(2)
-
-      const waves = 12
-      const amplitude = 30
-      const frequency = 0.02
-
-      for (let w = 0; w < waves; w++) {
-        const yOffset = (p.height / (waves + 1)) * (w + 1)
-        const phase = w * 0.5
-
-        p.beginShape()
-        for (let x = 0; x <= p.width; x += 5) {
-          const y = yOffset + Math.sin((x * frequency) + phase) * amplitude
-          p.vertex(x, y)
-        }
-        p.endShape()
-      }
-
-      // Add prompt text if available
-      if (props.prompt) {
-        p.fill(fg.r, fg.g, fg.b)
-        p.noStroke()
-        p.textAlign(p.CENTER, p.CENTER)
-        p.textSize(32)
-        p.text(props.prompt, p.width / 2, p.height / 2)
-      }
-    }
-
-    function drawCirclesVisual(p, fg) {
-      p.noFill()
-      p.strokeWeight(1)
-
-      const centerX = p.width / 2
-      const centerY = p.height / 2
-      const maxRadius = Math.min(p.width, p.height) * 0.45
-
-      // Concentric circles
-      for (let i = 1; i <= 15; i++) {
-        const radius = (maxRadius / 15) * i
-        p.ellipse(centerX, centerY, radius * 2, radius * 2)
-      }
-
-      // Center dot
-      p.fill(fg.r, fg.g, fg.b)
-      p.noStroke()
-      p.ellipse(centerX, centerY, 10, 10)
-
-      // Add prompt text if available
-      if (props.prompt) {
-        p.textAlign(p.CENTER, p.BOTTOM)
-        p.textSize(24)
-        p.text(props.prompt, centerX, p.height - 40)
-      }
-    }
-
-    function drawLinesVisual(p, fg) {
-      p.strokeWeight(1)
-
-      const lines = 30
-      const margin = 60
-
-      for (let i = 0; i < lines; i++) {
-        const x = margin + ((p.width - margin * 2) / (lines - 1)) * i
-        const variation = Math.sin(i * 0.3) * 50
-
-        p.line(x, margin + variation, x, p.height - margin - variation)
-      }
-
-      // Add prompt text if available
-      if (props.prompt) {
-        p.fill(fg.r, fg.g, fg.b)
-        p.noStroke()
-        p.textAlign(p.CENTER, p.CENTER)
-        p.textSize(28)
-
-        // Draw text with background for readability
-        const bg = hexToRgb(props.constraints.background)
-        p.fill(bg.r, bg.g, bg.b)
-        p.rectMode(p.CENTER)
-        const tw = p.textWidth(props.prompt) + 40
-        p.rect(p.width / 2, p.height / 2, tw, 50)
-
-        p.fill(fg.r, fg.g, fg.b)
-        p.text(props.prompt, p.width / 2, p.height / 2)
-      }
     }
   }
 }
@@ -296,7 +239,6 @@ async function generateAIVisual() {
   isGenerating.value = true
   aiError.value = ''
 
-  // Redraw to show loading state
   if (p5Instance) {
     p5Instance.redraw()
   }
@@ -306,12 +248,29 @@ async function generateAIVisual() {
       foreground: props.constraints.foreground,
       background: props.constraints.background
     })
+
+    const historyItem = {
+      code,
+      prompt: props.prompt,
+      timestamp: Date.now(),
+      constraints: {
+        foreground: props.constraints.foreground,
+        background: props.constraints.background
+      }
+    }
+
+    if (historyIndex.value < generationHistory.value.length - 1) {
+      generationHistory.value = generationHistory.value.slice(0, historyIndex.value + 1)
+    }
+
+    generationHistory.value.push(historyItem)
+    historyIndex.value = generationHistory.value.length - 1
+
     aiGeneratedCode.value = code
     aiError.value = ''
   } catch (err) {
     console.error('AI generation error:', err)
     aiError.value = err.message || 'Generation failed'
-    aiGeneratedCode.value = ''
   } finally {
     isGenerating.value = false
     if (p5Instance) {
@@ -320,17 +279,29 @@ async function generateAIVisual() {
   }
 }
 
-function regenerate() {
-  if (currentVisual.value === 'ai') {
-    generateAIVisual()
-  } else if (p5Instance) {
-    p5Instance.redraw()
+// Navigate history
+function goBack() {
+  if (canGoBack.value) {
+    historyIndex.value--
+    aiGeneratedCode.value = generationHistory.value[historyIndex.value].code
+    if (p5Instance) {
+      p5Instance.redraw()
+    }
   }
 }
 
-function setVisualMode(mode) {
-  currentVisual.value = mode
-  regenerate()
+function goForward() {
+  if (canGoForward.value) {
+    historyIndex.value++
+    aiGeneratedCode.value = generationHistory.value[historyIndex.value].code
+    if (p5Instance) {
+      p5Instance.redraw()
+    }
+  }
+}
+
+function regenerate() {
+  generateAIVisual()
 }
 
 // Get canvas for export
@@ -341,10 +312,9 @@ function getCanvas() {
   return null
 }
 
-// Export canvas at specified size
+// Export canvas at specified size (with labels)
 function exportCanvas(width, height) {
   return new Promise((resolve) => {
-    // Create a new p5 instance at export size
     const exportContainer = document.createElement('div')
     exportContainer.style.position = 'absolute'
     exportContainer.style.left = '-9999px'
@@ -357,7 +327,6 @@ function exportCanvas(width, height) {
         p.textFont(props.constraints.typeface)
         p.noLoop()
 
-        // Draw at export size
         const bg = hexToRgb(props.constraints.background)
         const fg = hexToRgb(props.constraints.foreground)
 
@@ -365,75 +334,9 @@ function exportCanvas(width, height) {
         p.fill(fg.r, fg.g, fg.b)
         p.stroke(fg.r, fg.g, fg.b)
 
-        // Scale factor
         const scale = width / 600
 
-        // Draw the current visual mode scaled
-        drawScaledVisual(p, fg, scale)
-
-        // Get data URL
-        const dataUrl = canvas.elt.toDataURL('image/png')
-
-        // Cleanup
-        p.remove()
-        document.body.removeChild(exportContainer)
-
-        resolve(dataUrl)
-      }
-
-      function drawScaledVisual(p, fg, scale) {
-        switch (currentVisual.value) {
-          case 'text':
-            drawScaledText(p, fg, scale)
-            break
-          case 'ai':
-            drawScaledAI(p, fg, scale)
-            break
-          case 'grid':
-            drawScaledGrid(p, fg, scale)
-            break
-          case 'wave':
-            drawScaledWave(p, fg, scale)
-            break
-          case 'circles':
-            drawScaledCircles(p, fg, scale)
-            break
-          case 'lines':
-            drawScaledLines(p, fg, scale)
-            break
-        }
-      }
-
-      function drawScaledText(p, fg, scale) {
-        p.noStroke()
-        p.textAlign(p.CENTER, p.CENTER)
-
-        const text = props.prompt || 'Your text here'
-        const lines = text.split('\n')
-        const maxWidth = p.width * 0.8
-
-        let fontSize = 72 * scale
-        p.textSize(fontSize)
-
-        for (let line of lines) {
-          while (p.textWidth(line) > maxWidth && fontSize > 12 * scale) {
-            fontSize -= 2 * scale
-            p.textSize(fontSize)
-          }
-        }
-
-        const lineHeight = fontSize * 1.3
-        const totalHeight = lines.length * lineHeight
-        const startY = (p.height - totalHeight) / 2 + lineHeight / 2
-
-        lines.forEach((line, i) => {
-          p.text(line, p.width / 2, startY + i * lineHeight)
-        })
-      }
-
-      function drawScaledAI(p, fg, scale) {
-        // For AI-generated visuals, we need to apply scaling
-        // The generated code uses 600x600 dimensions, so we scale the canvas
+        // Draw AI visual
         if (aiGeneratedCode.value) {
           try {
             p.push()
@@ -443,132 +346,29 @@ function exportCanvas(width, height) {
             p.pop()
           } catch (err) {
             console.error('AI code execution error during export:', err)
-            p.noStroke()
-            p.fill(fg.r, fg.g, fg.b, 100)
-            p.textAlign(p.CENTER, p.CENTER)
-            p.textSize(18 * scale)
-            p.text('Error rendering AI visual', p.width / 2, p.height / 2)
-          }
-        } else {
-          p.noStroke()
-          p.fill(fg.r, fg.g, fg.b, 100)
-          p.textAlign(p.CENTER, p.CENTER)
-          p.textSize(18 * scale)
-          p.text('No AI visual generated', p.width / 2, p.height / 2)
-        }
-      }
-
-      function drawScaledGrid(p, fg, scale) {
-        const cols = 8
-        const rows = 8
-        const cellWidth = p.width / cols
-        const cellHeight = p.height / rows
-        const padding = 8 * scale
-
-        p.noFill()
-        p.strokeWeight(1 * scale)
-
-        for (let i = 0; i < cols; i++) {
-          for (let j = 0; j < rows; j++) {
-            const x = i * cellWidth + padding
-            const y = j * cellHeight + padding
-            const w = cellWidth - padding * 2
-            const h = cellHeight - padding * 2
-            const variant = (i + j) % 4
-
-            if (variant === 0) {
-              p.rect(x, y, w, h)
-            } else if (variant === 1) {
-              p.ellipse(x + w/2, y + h/2, w * 0.8, h * 0.8)
-            } else if (variant === 2) {
-              p.line(x, y, x + w, y + h)
-              p.line(x + w, y, x, y + h)
-            } else {
-              p.line(x, y + h/2, x + w, y + h/2)
-              p.line(x + w/2, y, x + w/2, y + h)
-            }
           }
         }
-      }
 
-      function drawScaledWave(p, fg, scale) {
-        p.noFill()
-        p.strokeWeight(2 * scale)
-
-        const waves = 12
-        const amplitude = 30 * scale
-        const frequency = 0.02 / scale
-
-        for (let w = 0; w < waves; w++) {
-          const yOffset = (p.height / (waves + 1)) * (w + 1)
-          const phase = w * 0.5
-
-          p.beginShape()
-          for (let x = 0; x <= p.width; x += 5 * scale) {
-            const y = yOffset + Math.sin((x * frequency) + phase) * amplitude
-            p.vertex(x, y)
-          }
-          p.endShape()
-        }
-
-        if (props.prompt) {
-          p.fill(fg.r, fg.g, fg.b)
-          p.noStroke()
-          p.textAlign(p.CENTER, p.CENTER)
-          p.textSize(32 * scale)
-          p.text(props.prompt, p.width / 2, p.height / 2)
-        }
-      }
-
-      function drawScaledCircles(p, fg, scale) {
-        p.noFill()
-        p.strokeWeight(1 * scale)
-
-        const centerX = p.width / 2
-        const centerY = p.height / 2
-        const maxRadius = Math.min(p.width, p.height) * 0.45
-
-        for (let i = 1; i <= 15; i++) {
-          const radius = (maxRadius / 15) * i
-          p.ellipse(centerX, centerY, radius * 2, radius * 2)
-        }
-
+        // Draw labels
         p.fill(fg.r, fg.g, fg.b)
         p.noStroke()
-        p.ellipse(centerX, centerY, 10 * scale, 10 * scale)
+        labels.value.forEach(label => {
+          const x = (label.x / 100) * width
+          const y = (label.y / 100) * height
+          const fontSize = 24 * label.scale * scale
 
-        if (props.prompt) {
-          p.textAlign(p.CENTER, p.BOTTOM)
-          p.textSize(24 * scale)
-          p.text(props.prompt, centerX, p.height - 40 * scale)
-        }
-      }
+          p.textSize(fontSize)
+          p.textAlign(
+            label.align === 'left' ? p.LEFT : label.align === 'right' ? p.RIGHT : p.CENTER,
+            p.CENTER
+          )
+          p.text(label.text, x, y)
+        })
 
-      function drawScaledLines(p, fg, scale) {
-        p.strokeWeight(1 * scale)
-
-        const lines = 30
-        const margin = 60 * scale
-
-        for (let i = 0; i < lines; i++) {
-          const x = margin + ((p.width - margin * 2) / (lines - 1)) * i
-          const variation = Math.sin(i * 0.3) * 50 * scale
-          p.line(x, margin + variation, x, p.height - margin - variation)
-        }
-
-        if (props.prompt) {
-          const bg = hexToRgb(props.constraints.background)
-          p.fill(bg.r, bg.g, bg.b)
-          p.noStroke()
-          p.rectMode(p.CENTER)
-          p.textSize(28 * scale)
-          const tw = p.textWidth(props.prompt) + 40 * scale
-          p.rect(p.width / 2, p.height / 2, tw, 50 * scale)
-
-          p.fill(fg.r, fg.g, fg.b)
-          p.textAlign(p.CENTER, p.CENTER)
-          p.text(props.prompt, p.width / 2, p.height / 2)
-        }
+        const dataUrl = canvas.elt.toDataURL('image/png')
+        p.remove()
+        document.body.removeChild(exportContainer)
+        resolve(dataUrl)
       }
     }
 
@@ -576,14 +376,69 @@ function exportCanvas(width, height) {
   })
 }
 
-// Watch for changes and redraw
+// Watch for constraint changes
 watch(() => props.constraints, () => {
-  regenerate()
+  if (p5Instance) {
+    p5Instance.redraw()
+  }
 }, { deep: true })
 
-watch(() => props.prompt, () => {
-  regenerate()
+// Watch for prompt changes - redraw after spaces (word boundaries)
+watch(() => props.prompt, (newVal, oldVal) => {
+  // Redraw when space is typed (end of word)
+  if (newVal && newVal.endsWith(' ') && p5Instance) {
+    p5Instance.redraw()
+  }
+  // Also redraw when prompt is cleared
+  if (!newVal && oldVal && p5Instance) {
+    p5Instance.redraw()
+  }
 })
+
+// Save current iteration
+async function saveIteration() {
+  if (isSaving.value) return
+
+  isSaving.value = true
+
+  try {
+    // Generate thumbnail
+    const thumbnail = await exportCanvas(200, 200)
+
+    const iteration = {
+      id: Date.now(),
+      name: saveName.value || `Iteration ${Date.now()}`,
+      code: aiGeneratedCode.value,
+      labels: JSON.parse(JSON.stringify(labels.value)),
+      prompt: props.prompt,
+      constraints: {
+        foreground: props.constraints.foreground,
+        background: props.constraints.background
+      },
+      thumbnail,
+      createdAt: new Date().toISOString()
+    }
+
+    emit('save', iteration)
+    saveName.value = ''
+  } catch (err) {
+    console.error('Failed to save iteration:', err)
+  } finally {
+    isSaving.value = false
+  }
+}
+
+// Load a saved iteration
+function loadIteration(iteration) {
+  aiGeneratedCode.value = iteration.code || ''
+  labels.value = iteration.labels ? JSON.parse(JSON.stringify(iteration.labels)) : []
+  selectedLabel.value = null
+  editingLabel.value = null
+
+  if (p5Instance) {
+    p5Instance.redraw()
+  }
+}
 
 onMounted(() => {
   p5Instance = new p5(createSketch())
@@ -596,59 +451,109 @@ onUnmounted(() => {
   }
 })
 
-// Expose methods for parent
 defineExpose({
   regenerate,
   getCanvas,
-  exportCanvas
+  exportCanvas,
+  loadIteration
 })
 </script>
 
 <template>
-  <div class="canvas-preview">
-    <!-- Visual Mode Selector -->
-    <div class="mode-selector">
-      <button
-        v-for="mode in visualModes"
-        :key="mode.id"
-        class="mode-btn"
-        :class="{ active: currentVisual === mode.id }"
-        @click="setVisualMode(mode.id)"
-        :title="mode.name"
-      >
-        <span class="mode-icon">{{ mode.icon }}</span>
-        <span class="mode-name">{{ mode.name }}</span>
-      </button>
-    </div>
-
-    <!-- Canvas Container -->
-    <div class="canvas-wrapper">
+  <div class="canvas-preview" @click="selectedLabel = null">
+    <!-- Canvas Container with Labels Overlay -->
+    <div ref="canvasWrapper" class="canvas-wrapper">
       <div ref="canvasContainer" class="canvas-container"></div>
+
+      <!-- Labels Overlay -->
+      <div class="labels-overlay">
+        <div
+          v-for="label in labels"
+          :key="label.id"
+          class="label"
+          :class="{ selected: selectedLabel === label.id, editing: editingLabel === label.id }"
+          :style="{
+            left: label.x + '%',
+            top: label.y + '%',
+            transform: `translate(-50%, -50%) scale(${label.scale})`,
+            textAlign: label.align,
+            color: constraints.foreground
+          }"
+          @mousedown="startDrag($event, label)"
+          @dblclick="startEditing(label)"
+          @click.stop="selectedLabel = label.id"
+        >
+          <span
+            :contenteditable="editingLabel === label.id"
+            @blur="finishEditing"
+            @input="updateLabelText($event, label)"
+            @keydown.enter.prevent="finishEditing"
+            class="label-text"
+          >{{ label.text }}</span>
+
+          <!-- Resize handle -->
+          <div
+            v-if="selectedLabel === label.id && editingLabel !== label.id"
+            class="resize-handle"
+            @mousedown="startResize($event, label)"
+          >⤡</div>
+
+          <!-- Delete button -->
+          <button
+            v-if="selectedLabel === label.id && editingLabel !== label.id"
+            class="delete-btn"
+            @click.stop="deleteLabel(label.id)"
+          >×</button>
+
+          <!-- Align button -->
+          <button
+            v-if="selectedLabel === label.id && editingLabel !== label.id"
+            class="align-btn"
+            @click.stop="cycleAlign(label)"
+          >{{ label.align === 'left' ? '←' : label.align === 'right' ? '→' : '↔' }}</button>
+        </div>
+      </div>
     </div>
 
-    <!-- Generate/Regenerate Button -->
-    <button
-      class="btn regenerate-btn"
-      :class="{ generating: isGenerating }"
-      @click="regenerate"
-      :disabled="isGenerating || (currentVisual === 'ai' && !apiKey)"
-    >
-      <svg v-if="!isGenerating" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path v-if="currentVisual === 'ai'" d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-        <template v-else>
-          <path d="M23 4v6h-6M1 20v-6h6"/>
-          <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-        </template>
-      </svg>
-      <svg v-else class="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/>
-      </svg>
-      {{ isGenerating ? 'Generating...' : (currentVisual === 'ai' ? 'Generate' : 'Regenerate') }}
-    </button>
+    <!-- Controls Row -->
+    <div class="controls">
+      <button
+        class="btn"
+        @click.stop="regenerate"
+        :disabled="isGenerating || !apiKey"
+      >
+        {{ isGenerating ? 'GENERATING...' : '✦ GENERATE' }}
+      </button>
 
-    <!-- Show generated code info for AI mode -->
-    <div v-if="currentVisual === 'ai' && aiGeneratedCode" class="code-info">
-      <span class="code-status">✓ AI visual generated</span>
+      <button class="btn" @click.stop="addLabel">
+        + LABEL
+      </button>
+
+      <!-- History Navigation -->
+      <div v-if="generationHistory.length > 0" class="history-nav">
+        <button class="nav-btn" :disabled="!canGoBack" @click.stop="goBack">←</button>
+        <span class="history-pos">{{ historyIndex + 1 }}/{{ generationHistory.length }}</span>
+        <button class="nav-btn" :disabled="!canGoForward" @click.stop="goForward">→</button>
+      </div>
+    </div>
+
+    <!-- Save Row -->
+    <div class="save-row">
+      <input
+        type="text"
+        v-model="saveName"
+        placeholder="Name this iteration..."
+        class="save-name"
+        @click.stop
+        @keydown.enter="saveIteration"
+      />
+      <button
+        class="btn"
+        @click.stop="saveIteration"
+        :disabled="isSaving || !aiGeneratedCode"
+      >
+        {{ isSaving ? 'SAVING...' : '↓ SAVE' }}
+      </button>
     </div>
   </div>
 </template>
@@ -657,105 +562,167 @@ defineExpose({
 .canvas-preview {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
-}
-
-.mode-selector {
-  display: flex;
-  gap: var(--space-xs);
-  flex-wrap: wrap;
-  padding: var(--space-sm);
-  background: var(--color-muted);
-  border-radius: var(--radius-md);
-}
-
-.mode-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  padding: var(--space-xs) var(--space-sm);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--color-accent);
-  cursor: pointer;
-  font-size: 0.75rem;
-  transition: all var(--transition-fast);
-}
-
-.mode-btn:hover {
-  color: var(--color-fg);
-}
-
-.mode-btn.active {
-  background: var(--color-bg);
-  border-color: var(--color-border);
-  color: var(--color-fg);
-}
-
-.mode-icon {
-  font-size: 1rem;
-  line-height: 1;
-}
-
-.mode-name {
-  font-weight: 500;
+  gap: var(--space-sm);
+  flex: 1;
 }
 
 .canvas-wrapper {
+  flex: 1;
   display: flex;
   justify-content: center;
   align-items: center;
-  background: var(--color-muted);
-  border-radius: var(--radius-md);
-  padding: var(--space-lg);
+  border: 1px solid var(--color-border);
   min-height: 400px;
+  position: relative;
 }
 
 .canvas-container {
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  position: relative;
 }
 
 .canvas-container :deep(canvas) {
   display: block;
   max-width: 100%;
-  height: auto;
+  max-height: 100%;
 }
 
-.regenerate-btn {
-  align-self: flex-start;
+.labels-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
 }
 
-.regenerate-btn.generating {
-  opacity: 0.7;
-  cursor: wait;
+.label {
+  position: absolute;
+  pointer-events: auto;
+  cursor: move;
+  user-select: none;
+  font-size: 24px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
 }
 
-.regenerate-btn:disabled {
+.label.selected {
+  outline: 1px dashed var(--color-fg);
+  outline-offset: 4px;
+}
+
+.label.editing {
+  cursor: text;
+}
+
+.label-text {
+  display: inline-block;
+  min-width: 20px;
+  outline: none;
+}
+
+.label.editing .label-text {
+  background: rgba(0,0,0,0.5);
+  padding: 2px 4px;
+}
+
+.resize-handle {
+  position: absolute;
+  right: -20px;
+  bottom: -20px;
+  width: 16px;
+  height: 16px;
+  cursor: se-resize;
+  font-size: 10px;
   opacity: 0.5;
-  cursor: not-allowed;
 }
 
-.spinner {
-  animation: spin 1s linear infinite;
+.resize-handle:hover {
+  opacity: 1;
 }
 
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.delete-btn, .align-btn {
+  position: absolute;
+  top: -20px;
+  width: 16px;
+  height: 16px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+  font-family: var(--font-mono);
 }
 
-.code-info {
+.delete-btn {
+  right: -20px;
+}
+
+.delete-btn:hover {
+  background: #f00;
+  border-color: #f00;
+}
+
+.align-btn {
+  left: -20px;
+}
+
+.align-btn:hover {
+  border-color: var(--color-fg);
+}
+
+.controls {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  font-size: 0.75rem;
-  color: var(--color-accent);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-sm);
 }
 
-.code-status {
-  color: #00ff88;
+.history-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-left: auto;
+}
+
+.nav-btn {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.nav-btn:hover:not(:disabled) {
+  border-color: var(--color-fg);
+}
+
+.nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.history-pos {
+  font-size: 12px;
+  color: var(--color-accent);
+  min-width: 40px;
+  text-align: center;
+}
+
+.save-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-sm);
+}
+
+.save-name {
+  flex: 1;
 }
 </style>
