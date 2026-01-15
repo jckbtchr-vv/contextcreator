@@ -54,7 +54,7 @@ async function validateKey() {
         :type="showKey ? 'text' : 'password'"
         v-model="localApiKey"
         @input="updateApiKey"
-        placeholder="Gemini API key"
+        placeholder="GEMINI API KEY"
         :class="{ valid: validationStatus === 'valid', invalid: validationStatus === 'invalid' }"
       />
       <button class="icon-btn" @click="showKey = !showKey" type="button">
@@ -80,7 +80,7 @@ async function validateKey() {
 .api-settings {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: var(--space-md);
 }
 
 .section-title {

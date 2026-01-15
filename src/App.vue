@@ -142,7 +142,7 @@ function deleteIteration(id) {
           <textarea
             id="prompt"
             v-model="prompt"
-            placeholder="Describe the visual..."
+            placeholder="DESCRIBE THE VISUAL..."
             rows="2"
           ></textarea>
         </div>
@@ -195,10 +195,10 @@ function deleteIteration(id) {
 
 .sidebar {
   border-right: 1px solid var(--color-border);
-  padding: var(--space-md);
+  padding: var(--space-lg);
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: var(--space-lg);
   overflow-y: auto;
 }
 
@@ -208,7 +208,10 @@ function deleteIteration(id) {
 }
 
 .sidebar-header {
-  padding-bottom: var(--space-md);
+  padding-bottom: var(--space-lg);
+  margin: calc(-1 * var(--space-lg));
+  margin-bottom: 0;
+  padding: var(--space-lg);
   border-bottom: 1px solid var(--color-border);
   display: flex;
   justify-content: space-between;
@@ -235,18 +238,24 @@ function deleteIteration(id) {
 .divider {
   height: 1px;
   background: var(--color-border);
+  margin-left: calc(-1 * var(--space-lg));
+  margin-right: calc(-1 * var(--space-lg));
 }
 
 .main {
-  padding: var(--space-md);
+  padding: var(--space-lg);
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: var(--space-lg);
 }
 
 .prompt-section {
   border-top: 1px solid var(--color-border);
-  padding-top: var(--space-md);
+  padding-top: var(--space-lg);
+  margin-left: calc(-1 * var(--space-lg));
+  margin-right: calc(-1 * var(--space-lg));
+  padding-left: var(--space-lg);
+  padding-right: var(--space-lg);
 }
 
 .prompt-section textarea {
@@ -257,7 +266,7 @@ function deleteIteration(id) {
 .iterations-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: var(--space-md);
   flex: 1;
   overflow-y: auto;
 }

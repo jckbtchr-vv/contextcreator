@@ -199,18 +199,18 @@ function createSketch() {
           drawFunc(p)
         } catch (err) {
           console.error('AI code execution error:', err)
-          drawPlaceholder(p, fg, 'Error rendering')
+          drawPlaceholder(p, fg, 'ERROR RENDERING')
         }
       } else if (isGenerating.value) {
-        drawPlaceholder(p, fg, 'Generating...')
+        drawPlaceholder(p, fg, 'GENERATING...')
       } else if (aiError.value) {
-        drawPlaceholder(p, fg, aiError.value)
+        drawPlaceholder(p, fg, aiError.value.toUpperCase())
       } else if (!props.apiKey) {
-        drawPlaceholder(p, fg, 'Enter API key')
+        drawPlaceholder(p, fg, 'ENTER API KEY')
       } else if (!props.prompt) {
-        drawPlaceholder(p, fg, 'Enter prompt')
+        drawPlaceholder(p, fg, 'TYPE PROMPT + SPACE')
       } else {
-        drawPlaceholder(p, fg, 'Click Generate')
+        drawPlaceholder(p, fg, 'TYPE PROMPT + SPACE')
       }
     }
 
@@ -463,7 +463,11 @@ defineExpose({
   <div class="canvas-preview" @click="selectedLabel = null">
     <!-- Canvas Container with Labels Overlay -->
     <div ref="canvasWrapper" class="canvas-wrapper">
-      <div ref="canvasContainer" class="canvas-container"></div>
+      <div
+        ref="canvasContainer"
+        class="canvas-container"
+        :style="{ aspectRatio: exportSize.width + '/' + exportSize.height }"
+      ></div>
 
       <!-- Labels Overlay -->
       <div class="labels-overlay">
@@ -542,7 +546,7 @@ defineExpose({
       <input
         type="text"
         v-model="saveName"
-        placeholder="Name this iteration..."
+        placeholder="NAME THIS ITERATION..."
         class="save-name"
         @click.stop
         @keydown.enter="saveIteration"
@@ -562,7 +566,7 @@ defineExpose({
 .canvas-preview {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: var(--space-lg);
   flex: 1;
 }
 
@@ -578,6 +582,8 @@ defineExpose({
 
 .canvas-container {
   position: relative;
+  border: 2px solid var(--color-fg);
+  box-sizing: content-box;
 }
 
 .canvas-container :deep(canvas) {
@@ -675,9 +681,13 @@ defineExpose({
 .controls {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: var(--space-md);
   border-top: 1px solid var(--color-border);
-  padding-top: var(--space-sm);
+  padding-top: var(--space-lg);
+  margin-left: calc(-1 * var(--space-lg));
+  margin-right: calc(-1 * var(--space-lg));
+  padding-left: var(--space-lg);
+  padding-right: var(--space-lg);
 }
 
 .history-nav {
@@ -717,9 +727,13 @@ defineExpose({
 .save-row {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: var(--space-md);
   border-top: 1px solid var(--color-border);
-  padding-top: var(--space-sm);
+  padding-top: var(--space-lg);
+  margin-left: calc(-1 * var(--space-lg));
+  margin-right: calc(-1 * var(--space-lg));
+  padding-left: var(--space-lg);
+  padding-right: var(--space-lg);
 }
 
 .save-name {

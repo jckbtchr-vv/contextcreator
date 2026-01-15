@@ -134,7 +134,7 @@ async function copyToClipboard() {
 .export-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: var(--space-md);
 }
 
 .section-title {
