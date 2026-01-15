@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, watch } from 'vue'
 import ConstraintPanel from './components/ConstraintPanel.vue'
 import CanvasPreview from './components/CanvasPreview.vue'
 import ExportPanel from './components/ExportPanel.vue'
@@ -52,13 +52,53 @@ const exportSizes = [
 ]
 
 const selectedExportSize = ref(exportSizes[0])
+
+// Saved iterations
+const savedIterations = ref([])
+
+// Load saved iterations from localStorage on mount
+const storedIterations = localStorage.getItem('saved_iterations')
+if (storedIterations) {
+  try {
+    savedIterations.value = JSON.parse(storedIterations)
+  } catch (e) {
+    console.error('Failed to load saved iterations:', e)
+  }
+}
+
+// Save iterations to localStorage when changed
+watch(savedIterations, (newVal) => {
+  localStorage.setItem('saved_iterations', JSON.stringify(newVal))
+}, { deep: true })
+
+// Handle save from canvas
+function handleSave(iteration) {
+  savedIterations.value.unshift(iteration)
+}
+
+// Load a saved iteration
+function loadIteration(iteration) {
+  if (canvasRef.value) {
+    canvasRef.value.loadIteration(iteration)
+  }
+  prompt.value = iteration.prompt || ''
+  if (iteration.constraints) {
+    constraints.foreground = iteration.constraints.foreground
+    constraints.background = iteration.constraints.background
+  }
+}
+
+// Delete a saved iteration
+function deleteIteration(id) {
+  savedIterations.value = savedIterations.value.filter(i => i.id !== id)
+}
 </script>
 
 <template>
   <div class="app">
     <div class="layout">
       <!-- Left Panel -->
-      <aside class="sidebar">
+      <aside class="sidebar left">
         <div class="sidebar-header">
           <span class="logo">CONTEXT CREATOR</span>
         </div>
@@ -94,6 +134,7 @@ const selectedExportSize = ref(exportSizes[0])
           :prompt="prompt"
           :export-size="selectedExportSize"
           :api-key="apiKey"
+          @save="handleSave"
         />
 
         <div class="prompt-section">
@@ -106,6 +147,36 @@ const selectedExportSize = ref(exportSizes[0])
           ></textarea>
         </div>
       </main>
+
+      <!-- Right Panel - Saved Iterations -->
+      <aside class="sidebar right">
+        <div class="sidebar-header">
+          <span class="section-title">SAVED</span>
+          <span class="count">{{ savedIterations.length }}</span>
+        </div>
+
+        <div class="iterations-list">
+          <div
+            v-for="iteration in savedIterations"
+            :key="iteration.id"
+            class="iteration-card"
+            @click="loadIteration(iteration)"
+          >
+            <div class="iteration-preview" :style="{ background: iteration.constraints?.background || '#000' }">
+              <img v-if="iteration.thumbnail" :src="iteration.thumbnail" alt="" />
+            </div>
+            <div class="iteration-info">
+              <div class="iteration-name">{{ iteration.name || 'Untitled' }}</div>
+              <div class="iteration-prompt">{{ iteration.prompt?.slice(0, 40) }}{{ iteration.prompt?.length > 40 ? '...' : '' }}</div>
+            </div>
+            <button class="delete-iteration" @click.stop="deleteIteration(iteration.id)">×</button>
+          </div>
+
+          <div v-if="savedIterations.length === 0" class="empty-state">
+            No saved iterations yet
+          </div>
+        </div>
+      </aside>
     </div>
   </div>
 </template>
@@ -118,7 +189,7 @@ const selectedExportSize = ref(exportSizes[0])
 
 .layout {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 240px 1fr 200px;
   min-height: 100vh;
 }
 
@@ -131,15 +202,34 @@ const selectedExportSize = ref(exportSizes[0])
   overflow-y: auto;
 }
 
+.sidebar.right {
+  border-right: none;
+  border-left: 1px solid var(--color-border);
+}
+
 .sidebar-header {
   padding-bottom: var(--space-md);
   border-bottom: 1px solid var(--color-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .logo {
   font-size: 12px;
   letter-spacing: 0.1em;
   color: var(--color-fg);
+}
+
+.section-title {
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  color: var(--color-accent);
+}
+
+.count {
+  font-size: 12px;
+  color: var(--color-accent);
 }
 
 .divider {
@@ -163,7 +253,92 @@ const selectedExportSize = ref(exportSizes[0])
   resize: none;
 }
 
-@media (max-width: 768px) {
+/* Iterations List */
+.iterations-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  flex: 1;
+  overflow-y: auto;
+}
+
+.iteration-card {
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  position: relative;
+}
+
+.iteration-card:hover {
+  border-color: var(--color-fg);
+}
+
+.iteration-preview {
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+}
+
+.iteration-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.iteration-info {
+  padding: var(--space-xs);
+  border-top: 1px solid var(--color-border);
+}
+
+.iteration-name {
+  font-size: 12px;
+  color: var(--color-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.iteration-prompt {
+  font-size: 10px;
+  color: var(--color-accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.delete-iteration {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.iteration-card:hover .delete-iteration {
+  opacity: 1;
+}
+
+.delete-iteration:hover {
+  background: #f00;
+  border-color: #f00;
+}
+
+.empty-state {
+  font-size: 12px;
+  color: var(--color-accent);
+  text-align: center;
+  padding: var(--space-lg) var(--space-sm);
+}
+
+@media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;
   }
@@ -171,6 +346,11 @@ const selectedExportSize = ref(exportSizes[0])
   .sidebar {
     border-right: none;
     border-bottom: 1px solid var(--color-border);
+  }
+
+  .sidebar.right {
+    border-left: none;
+    border-top: 1px solid var(--color-border);
   }
 }
 </style>

@@ -10,13 +10,17 @@ const props = defineProps({
   apiKey: String
 })
 
-const emit = defineEmits(['canvas-ready'])
+const emit = defineEmits(['canvas-ready', 'save'])
 
 const canvasContainer = ref(null)
 const canvasWrapper = ref(null)
 const isGenerating = ref(false)
 const aiGeneratedCode = ref('')
 const aiError = ref('')
+
+// Save state
+const saveName = ref('')
+const isSaving = ref(false)
 
 // History of generated visuals
 const generationHistory = ref([])
@@ -379,6 +383,51 @@ watch(() => props.constraints, () => {
   }
 }, { deep: true })
 
+// Save current iteration
+async function saveIteration() {
+  if (isSaving.value) return
+
+  isSaving.value = true
+
+  try {
+    // Generate thumbnail
+    const thumbnail = await exportCanvas(200, 200)
+
+    const iteration = {
+      id: Date.now(),
+      name: saveName.value || `Iteration ${Date.now()}`,
+      code: aiGeneratedCode.value,
+      labels: JSON.parse(JSON.stringify(labels.value)),
+      prompt: props.prompt,
+      constraints: {
+        foreground: props.constraints.foreground,
+        background: props.constraints.background
+      },
+      thumbnail,
+      createdAt: new Date().toISOString()
+    }
+
+    emit('save', iteration)
+    saveName.value = ''
+  } catch (err) {
+    console.error('Failed to save iteration:', err)
+  } finally {
+    isSaving.value = false
+  }
+}
+
+// Load a saved iteration
+function loadIteration(iteration) {
+  aiGeneratedCode.value = iteration.code || ''
+  labels.value = iteration.labels ? JSON.parse(JSON.stringify(iteration.labels)) : []
+  selectedLabel.value = null
+  editingLabel.value = null
+
+  if (p5Instance) {
+    p5Instance.redraw()
+  }
+}
+
 onMounted(() => {
   p5Instance = new p5(createSketch())
   emit('canvas-ready', { getCanvas, exportCanvas })
@@ -393,7 +442,8 @@ onUnmounted(() => {
 defineExpose({
   regenerate,
   getCanvas,
-  exportCanvas
+  exportCanvas,
+  loadIteration
 })
 </script>
 
@@ -473,6 +523,25 @@ defineExpose({
         <span class="history-pos">{{ historyIndex + 1 }}/{{ generationHistory.length }}</span>
         <button class="nav-btn" :disabled="!canGoForward" @click.stop="goForward">→</button>
       </div>
+    </div>
+
+    <!-- Save Row -->
+    <div class="save-row">
+      <input
+        type="text"
+        v-model="saveName"
+        placeholder="Name this iteration..."
+        class="save-name"
+        @click.stop
+        @keydown.enter="saveIteration"
+      />
+      <button
+        class="btn"
+        @click.stop="saveIteration"
+        :disabled="isSaving || !aiGeneratedCode"
+      >
+        {{ isSaving ? 'SAVING...' : '↓ SAVE' }}
+      </button>
     </div>
   </div>
 </template>
@@ -631,5 +700,17 @@ defineExpose({
   color: var(--color-accent);
   min-width: 40px;
   text-align: center;
+}
+
+.save-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-sm);
+}
+
+.save-name {
+  flex: 1;
 }
 </style>
