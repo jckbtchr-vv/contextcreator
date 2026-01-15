@@ -578,7 +578,7 @@ defineExpose({
         @click.stop="regenerate"
         :disabled="isGenerating || !apiKey"
       >
-        {{ isGenerating ? 'GENERATING...' : '✦ GENERATE' }}
+        {{ isGenerating ? 'GENERATING...' : '✦ REGENERATE' }}
       </button>
 
       <button class="btn" @click.stop="addLabel">
