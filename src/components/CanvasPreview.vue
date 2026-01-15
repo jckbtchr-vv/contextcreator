@@ -1,25 +1,29 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import p5 from 'p5'
+import { generateP5Code } from '../services/geminiService'
 
 const props = defineProps({
   constraints: Object,
   prompt: String,
-  exportSize: Object
+  exportSize: Object,
+  apiKey: String
 })
 
 const emit = defineEmits(['canvas-ready'])
 
 const canvasContainer = ref(null)
 const isGenerating = ref(false)
-const currentVisual = ref('text') // 'text', 'geometric', 'grid', 'wave'
+const currentVisual = ref('ai') // 'text', 'ai', 'grid', 'wave'
+const aiGeneratedCode = ref('')
+const aiError = ref('')
 
 let p5Instance = null
 
 // Visual generation modes
 const visualModes = [
+  { id: 'ai', name: 'AI Generated', icon: '✦' },
   { id: 'text', name: 'Text', icon: 'T' },
-  { id: 'geometric', name: 'Geometric', icon: '◇' },
   { id: 'grid', name: 'Grid', icon: '▦' },
   { id: 'wave', name: 'Wave', icon: '∿' },
   { id: 'circles', name: 'Circles', icon: '◎' },
@@ -66,8 +70,8 @@ function createSketch() {
         case 'text':
           drawTextVisual(p, fg)
           break
-        case 'geometric':
-          drawGeometricVisual(p, fg)
+        case 'ai':
+          drawAIVisual(p, fg, bg)
           break
         case 'grid':
           drawGridVisual(p, fg)
@@ -113,43 +117,42 @@ function createSketch() {
       })
     }
 
-    function drawGeometricVisual(p, fg) {
-      p.noFill()
-      p.strokeWeight(2)
-
-      const centerX = p.width / 2
-      const centerY = p.height / 2
-      const maxRadius = Math.min(p.width, p.height) * 0.4
-
-      // Draw concentric shapes
-      for (let i = 0; i < 8; i++) {
-        const radius = maxRadius * (1 - i * 0.1)
-        const sides = 4 + i % 3
-
-        p.push()
-        p.translate(centerX, centerY)
-        p.rotate(i * p.PI / 12)
-        drawPolygon(p, 0, 0, radius, sides)
-        p.pop()
-      }
-
-      // Add prompt text if available
-      if (props.prompt) {
-        p.fill(fg.r, fg.g, fg.b)
-        p.noStroke()
-        p.textAlign(p.CENTER, p.BOTTOM)
-        p.textSize(24)
-        p.text(props.prompt, centerX, p.height - 40)
+    function drawAIVisual(p, fg, bg) {
+      // If we have AI-generated code, execute it
+      if (aiGeneratedCode.value) {
+        try {
+          // Create a safe execution context
+          const drawFunc = new Function('p', aiGeneratedCode.value)
+          drawFunc(p)
+        } catch (err) {
+          // If execution fails, show error state
+          console.error('AI code execution error:', err)
+          drawPlaceholder(p, fg, 'Error rendering AI visual')
+        }
+      } else if (isGenerating.value) {
+        // Show loading state
+        drawPlaceholder(p, fg, 'Generating...')
+      } else if (aiError.value) {
+        // Show error message
+        drawPlaceholder(p, fg, aiError.value)
+      } else if (!props.apiKey) {
+        // No API key
+        drawPlaceholder(p, fg, 'Enter API key to generate')
+      } else if (!props.prompt) {
+        // No prompt
+        drawPlaceholder(p, fg, 'Enter a prompt to generate')
+      } else {
+        // Ready to generate
+        drawPlaceholder(p, fg, 'Click Generate to create visual')
       }
     }
 
-    function drawPolygon(p, x, y, radius, sides) {
-      p.beginShape()
-      for (let i = 0; i < sides; i++) {
-        const angle = (p.TWO_PI / sides) * i - p.HALF_PI
-        p.vertex(x + radius * p.cos(angle), y + radius * p.sin(angle))
-      }
-      p.endShape(p.CLOSE)
+    function drawPlaceholder(p, fg, message) {
+      p.noStroke()
+      p.fill(fg.r, fg.g, fg.b, 100)
+      p.textAlign(p.CENTER, p.CENTER)
+      p.textSize(18)
+      p.text(message, p.width / 2, p.height / 2)
     }
 
     function drawGridVisual(p, fg) {
@@ -278,8 +281,49 @@ function createSketch() {
   }
 }
 
-function regenerate() {
+// Generate AI visual from prompt
+async function generateAIVisual() {
+  if (!props.apiKey) {
+    aiError.value = 'API key required'
+    return
+  }
+
+  if (!props.prompt || props.prompt.trim() === '') {
+    aiError.value = 'Enter a prompt'
+    return
+  }
+
+  isGenerating.value = true
+  aiError.value = ''
+
+  // Redraw to show loading state
   if (p5Instance) {
+    p5Instance.redraw()
+  }
+
+  try {
+    const code = await generateP5Code(props.apiKey, props.prompt, {
+      foreground: props.constraints.foreground,
+      background: props.constraints.background
+    })
+    aiGeneratedCode.value = code
+    aiError.value = ''
+  } catch (err) {
+    console.error('AI generation error:', err)
+    aiError.value = err.message || 'Generation failed'
+    aiGeneratedCode.value = ''
+  } finally {
+    isGenerating.value = false
+    if (p5Instance) {
+      p5Instance.redraw()
+    }
+  }
+}
+
+function regenerate() {
+  if (currentVisual.value === 'ai') {
+    generateAIVisual()
+  } else if (p5Instance) {
     p5Instance.redraw()
   }
 }
@@ -342,8 +386,8 @@ function exportCanvas(width, height) {
           case 'text':
             drawScaledText(p, fg, scale)
             break
-          case 'geometric':
-            drawScaledGeometric(p, fg, scale)
+          case 'ai':
+            drawScaledAI(p, fg, scale)
             break
           case 'grid':
             drawScaledGrid(p, fg, scale)
@@ -387,37 +431,30 @@ function exportCanvas(width, height) {
         })
       }
 
-      function drawScaledGeometric(p, fg, scale) {
-        p.noFill()
-        p.strokeWeight(2 * scale)
-
-        const centerX = p.width / 2
-        const centerY = p.height / 2
-        const maxRadius = Math.min(p.width, p.height) * 0.4
-
-        for (let i = 0; i < 8; i++) {
-          const radius = maxRadius * (1 - i * 0.1)
-          const sides = 4 + i % 3
-
-          p.push()
-          p.translate(centerX, centerY)
-          p.rotate(i * p.PI / 12)
-
-          p.beginShape()
-          for (let j = 0; j < sides; j++) {
-            const angle = (p.TWO_PI / sides) * j - p.HALF_PI
-            p.vertex(radius * p.cos(angle), radius * p.sin(angle))
+      function drawScaledAI(p, fg, scale) {
+        // For AI-generated visuals, we need to apply scaling
+        // The generated code uses 600x600 dimensions, so we scale the canvas
+        if (aiGeneratedCode.value) {
+          try {
+            p.push()
+            p.scale(scale)
+            const drawFunc = new Function('p', aiGeneratedCode.value)
+            drawFunc(p)
+            p.pop()
+          } catch (err) {
+            console.error('AI code execution error during export:', err)
+            p.noStroke()
+            p.fill(fg.r, fg.g, fg.b, 100)
+            p.textAlign(p.CENTER, p.CENTER)
+            p.textSize(18 * scale)
+            p.text('Error rendering AI visual', p.width / 2, p.height / 2)
           }
-          p.endShape(p.CLOSE)
-          p.pop()
-        }
-
-        if (props.prompt) {
-          p.fill(fg.r, fg.g, fg.b)
+        } else {
           p.noStroke()
-          p.textAlign(p.CENTER, p.BOTTOM)
-          p.textSize(24 * scale)
-          p.text(props.prompt, centerX, p.height - 40 * scale)
+          p.fill(fg.r, fg.g, fg.b, 100)
+          p.textAlign(p.CENTER, p.CENTER)
+          p.textSize(18 * scale)
+          p.text('No AI visual generated', p.width / 2, p.height / 2)
         }
       }
 
@@ -589,14 +626,30 @@ defineExpose({
       <div ref="canvasContainer" class="canvas-container"></div>
     </div>
 
-    <!-- Regenerate Button -->
-    <button class="btn regenerate-btn" @click="regenerate">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M23 4v6h-6M1 20v-6h6"/>
-        <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+    <!-- Generate/Regenerate Button -->
+    <button
+      class="btn regenerate-btn"
+      :class="{ generating: isGenerating }"
+      @click="regenerate"
+      :disabled="isGenerating || (currentVisual === 'ai' && !apiKey)"
+    >
+      <svg v-if="!isGenerating" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path v-if="currentVisual === 'ai'" d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        <template v-else>
+          <path d="M23 4v6h-6M1 20v-6h6"/>
+          <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+        </template>
       </svg>
-      Regenerate
+      <svg v-else class="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/>
+      </svg>
+      {{ isGenerating ? 'Generating...' : (currentVisual === 'ai' ? 'Generate' : 'Regenerate') }}
     </button>
+
+    <!-- Show generated code info for AI mode -->
+    <div v-if="currentVisual === 'ai' && aiGeneratedCode" class="code-info">
+      <span class="code-status">✓ AI visual generated</span>
+    </div>
   </div>
 </template>
 
@@ -673,5 +726,36 @@ defineExpose({
 
 .regenerate-btn {
   align-self: flex-start;
+}
+
+.regenerate-btn.generating {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.regenerate-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.code-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 0.75rem;
+  color: var(--color-accent);
+}
+
+.code-status {
+  color: #00ff88;
 }
 </style>

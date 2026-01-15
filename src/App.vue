@@ -3,12 +3,25 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import ConstraintPanel from './components/ConstraintPanel.vue'
 import CanvasPreview from './components/CanvasPreview.vue'
 import ExportPanel from './components/ExportPanel.vue'
+import ApiSettingsPanel from './components/ApiSettingsPanel.vue'
 
 // Constraints state
 const constraints = reactive({
   foreground: '#ffffff',
   background: '#000000',
   typeface: 'Inter'
+})
+
+// API key for Gemini
+const apiKey = ref(localStorage.getItem('gemini_api_key') || '')
+
+// Save API key to localStorage when it changes
+watch(apiKey, (newKey) => {
+  if (newKey) {
+    localStorage.setItem('gemini_api_key', newKey)
+  } else {
+    localStorage.removeItem('gemini_api_key')
+  }
 })
 
 // Prompt for visual generation
@@ -57,8 +70,10 @@ const previewStyle = computed(() => ({
     <main class="main">
       <div class="container">
         <div class="workspace">
-          <!-- Left Panel: Constraints -->
+          <!-- Left Panel: Settings -->
           <aside class="sidebar">
+            <ApiSettingsPanel v-model="apiKey" />
+
             <ConstraintPanel
               v-model:foreground="constraints.foreground"
               v-model:background="constraints.background"
@@ -81,6 +96,7 @@ const previewStyle = computed(() => ({
               :constraints="constraints"
               :prompt="prompt"
               :export-size="selectedExportSize"
+              :api-key="apiKey"
             />
 
             <!-- Prompt Input -->
