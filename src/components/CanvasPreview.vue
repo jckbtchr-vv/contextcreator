@@ -35,6 +35,10 @@ const isResizing = ref(false)
 const dragStart = reactive({ x: 0, y: 0 })
 const labelStart = reactive({ x: 0, y: 0, scale: 1 })
 
+// Snap guides
+const snapThreshold = 2 // percentage threshold for snapping
+const activeSnapGuides = reactive({ x: null, y: null })
+
 let p5Instance = null
 
 // Computed properties for history navigation
@@ -88,13 +92,53 @@ function onDrag(e) {
 
   const label = labels.value.find(l => l.id === selectedLabel.value)
   if (label) {
-    label.x = Math.max(0, Math.min(100, labelStart.x + dx))
-    label.y = Math.max(0, Math.min(100, labelStart.y + dy))
+    let newX = Math.max(0, Math.min(100, labelStart.x + dx))
+    let newY = Math.max(0, Math.min(100, labelStart.y + dy))
+
+    // Reset snap guides
+    activeSnapGuides.x = null
+    activeSnapGuides.y = null
+
+    // Get positions of other labels for snapping
+    const otherLabels = labels.value.filter(l => l.id !== label.id)
+
+    // Check for horizontal alignment (same Y)
+    for (const other of otherLabels) {
+      if (Math.abs(newY - other.y) < snapThreshold) {
+        newY = other.y
+        activeSnapGuides.y = other.y
+        break
+      }
+    }
+
+    // Check for vertical alignment (same X)
+    for (const other of otherLabels) {
+      if (Math.abs(newX - other.x) < snapThreshold) {
+        newX = other.x
+        activeSnapGuides.x = other.x
+        break
+      }
+    }
+
+    // Also snap to center lines (50%)
+    if (Math.abs(newX - 50) < snapThreshold) {
+      newX = 50
+      activeSnapGuides.x = 50
+    }
+    if (Math.abs(newY - 50) < snapThreshold) {
+      newY = 50
+      activeSnapGuides.y = 50
+    }
+
+    label.x = newX
+    label.y = newY
   }
 }
 
 function stopDrag() {
   isDragging.value = false
+  activeSnapGuides.x = null
+  activeSnapGuides.y = null
   document.removeEventListener('mousemove', onDrag)
   document.removeEventListener('mouseup', stopDrag)
 }
@@ -355,7 +399,7 @@ function exportCanvas(width, height) {
         labels.value.forEach(label => {
           const x = (label.x / 100) * width
           const y = (label.y / 100) * height
-          const fontSize = 24 * label.scale * scale
+          const fontSize = 16 * label.scale * scale
 
           p.textSize(fontSize)
           p.textAlign(
@@ -467,6 +511,18 @@ defineExpose({
 
       <!-- Labels Overlay -->
       <div class="labels-overlay">
+        <!-- Snap guides -->
+        <div
+          v-if="activeSnapGuides.x !== null"
+          class="snap-guide snap-guide-vertical"
+          :style="{ left: activeSnapGuides.x + '%' }"
+        ></div>
+        <div
+          v-if="activeSnapGuides.y !== null"
+          class="snap-guide snap-guide-horizontal"
+          :style="{ top: activeSnapGuides.y + '%' }"
+        ></div>
+
         <div
           v-for="label in labels"
           :key="label.id"
@@ -600,9 +656,27 @@ defineExpose({
   pointer-events: auto;
   cursor: move;
   user-select: none;
-  font-size: 24px;
+  font-size: 16px;
   font-family: var(--font-mono);
   white-space: nowrap;
+}
+
+.snap-guide {
+  position: absolute;
+  pointer-events: none;
+  background: var(--color-accent);
+}
+
+.snap-guide-vertical {
+  width: 1px;
+  top: 0;
+  bottom: 0;
+}
+
+.snap-guide-horizontal {
+  height: 1px;
+  left: 0;
+  right: 0;
 }
 
 .label.selected {
