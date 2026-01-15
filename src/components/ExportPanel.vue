@@ -3,12 +3,11 @@ import { ref } from 'vue'
 
 const props = defineProps({
   canvasRef: Object,
-  sizes: Array,
-  selectedSize: Object,
   constraints: Object
 })
 
-const emit = defineEmits(['update:selectedSize'])
+// Fixed export size
+const exportSize = { width: 1080, height: 1440, name: '1080×1440' }
 
 const isExporting = ref(false)
 const exportFormat = ref('png')
@@ -19,7 +18,7 @@ async function exportImage() {
   isExporting.value = true
 
   try {
-    const { width, height } = props.selectedSize
+    const { width, height } = exportSize
     const dataUrl = await props.canvasRef.exportCanvas(width, height)
 
     const link = document.createElement('a')
@@ -56,7 +55,7 @@ async function exportImage() {
 
 function generateFilename() {
   const date = new Date().toISOString().slice(0, 10)
-  const size = props.selectedSize.name.toLowerCase().replace(/\s+/g, '-')
+  const size = exportSize.name.toLowerCase().replace(/\s+/g, '-')
   return `context-${size}-${date}.png`
 }
 
@@ -66,7 +65,7 @@ async function copyToClipboard() {
   isExporting.value = true
 
   try {
-    const { width, height } = props.selectedSize
+    const { width, height } = exportSize
     const dataUrl = await props.canvasRef.exportCanvas(width, height)
 
     const response = await fetch(dataUrl)
@@ -86,19 +85,6 @@ async function copyToClipboard() {
 <template>
   <div class="export-panel">
     <div class="section-title">EXPORT</div>
-
-    <!-- Size Selection -->
-    <div class="size-list">
-      <button
-        v-for="size in sizes"
-        :key="size.name"
-        class="size-btn"
-        :class="{ active: selectedSize.name === size.name }"
-        @click="emit('update:selectedSize', size)"
-      >
-        {{ size.name }}
-      </button>
-    </div>
 
     <!-- Format Selection -->
     <div class="format-row">
@@ -141,33 +127,6 @@ async function copyToClipboard() {
   font-size: 12px;
   color: var(--color-accent);
   letter-spacing: 0.05em;
-}
-
-.size-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs);
-}
-
-.size-btn {
-  padding: var(--space-xs) var(--space-sm);
-  background: transparent;
-  border: 1px solid var(--color-border);
-  color: var(--color-accent);
-  cursor: pointer;
-  font-size: 12px;
-  font-family: var(--font-mono);
-}
-
-.size-btn:hover {
-  color: var(--color-fg);
-  border-color: var(--color-fg);
-}
-
-.size-btn.active {
-  background: var(--color-fg);
-  color: var(--color-bg);
-  border-color: var(--color-fg);
 }
 
 .format-row {
