@@ -18,6 +18,20 @@ const currentVisual = ref('ai') // 'text', 'ai', 'grid', 'wave'
 const aiGeneratedCode = ref('')
 const aiError = ref('')
 
+// History of generated visuals
+const generationHistory = ref([])
+const historyIndex = ref(-1)
+
+// Computed properties for history navigation
+const canGoBack = computed(() => historyIndex.value > 0)
+const canGoForward = computed(() => historyIndex.value < generationHistory.value.length - 1)
+const currentHistoryItem = computed(() => {
+  if (historyIndex.value >= 0 && historyIndex.value < generationHistory.value.length) {
+    return generationHistory.value[historyIndex.value]
+  }
+  return null
+})
+
 let p5Instance = null
 
 // Visual generation modes
@@ -306,14 +320,54 @@ async function generateAIVisual() {
       foreground: props.constraints.foreground,
       background: props.constraints.background
     })
+
+    // Add to history
+    const historyItem = {
+      code,
+      prompt: props.prompt,
+      timestamp: Date.now(),
+      constraints: {
+        foreground: props.constraints.foreground,
+        background: props.constraints.background
+      }
+    }
+
+    // If we're not at the end of history, truncate forward history
+    if (historyIndex.value < generationHistory.value.length - 1) {
+      generationHistory.value = generationHistory.value.slice(0, historyIndex.value + 1)
+    }
+
+    generationHistory.value.push(historyItem)
+    historyIndex.value = generationHistory.value.length - 1
+
     aiGeneratedCode.value = code
     aiError.value = ''
   } catch (err) {
     console.error('AI generation error:', err)
     aiError.value = err.message || 'Generation failed'
-    aiGeneratedCode.value = ''
   } finally {
     isGenerating.value = false
+    if (p5Instance) {
+      p5Instance.redraw()
+    }
+  }
+}
+
+// Navigate history
+function goBack() {
+  if (canGoBack.value) {
+    historyIndex.value--
+    aiGeneratedCode.value = generationHistory.value[historyIndex.value].code
+    if (p5Instance) {
+      p5Instance.redraw()
+    }
+  }
+}
+
+function goForward() {
+  if (canGoForward.value) {
+    historyIndex.value++
+    aiGeneratedCode.value = generationHistory.value[historyIndex.value].code
     if (p5Instance) {
       p5Instance.redraw()
     }
@@ -646,9 +700,36 @@ defineExpose({
       {{ isGenerating ? 'Generating...' : (currentVisual === 'ai' ? 'Generate' : 'Regenerate') }}
     </button>
 
-    <!-- Show generated code info for AI mode -->
-    <div v-if="currentVisual === 'ai' && aiGeneratedCode" class="code-info">
-      <span class="code-status">✓ AI visual generated</span>
+    <!-- History Navigation for AI mode -->
+    <div v-if="currentVisual === 'ai' && generationHistory.length > 0" class="history-nav">
+      <button
+        class="history-btn"
+        :disabled="!canGoBack"
+        @click="goBack"
+        title="Previous version"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M15 18l-6-6 6-6"/>
+        </svg>
+      </button>
+
+      <div class="history-info">
+        <span class="history-position">{{ historyIndex + 1 }} / {{ generationHistory.length }}</span>
+        <span v-if="currentHistoryItem" class="history-prompt" :title="currentHistoryItem.prompt">
+          {{ currentHistoryItem.prompt.slice(0, 30) }}{{ currentHistoryItem.prompt.length > 30 ? '...' : '' }}
+        </span>
+      </div>
+
+      <button
+        class="history-btn"
+        :disabled="!canGoForward"
+        @click="goForward"
+        title="Next version"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 18l6-6-6-6"/>
+        </svg>
+      </button>
     </div>
   </div>
 </template>
@@ -747,15 +828,60 @@ defineExpose({
   to { transform: rotate(360deg); }
 }
 
-.code-info {
+/* History Navigation */
+.history-nav {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  font-size: 0.75rem;
-  color: var(--color-accent);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-muted);
+  border-radius: var(--radius-md);
 }
 
-.code-status {
-  color: #00ff88;
+.history-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.history-btn:hover:not(:disabled) {
+  border-color: var(--color-fg);
+}
+
+.history-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.history-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.history-position {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.history-prompt {
+  font-size: 0.625rem;
+  color: var(--color-accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
 }
 </style>
