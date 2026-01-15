@@ -37,6 +37,14 @@ const typefaces = [
   { name: 'JetBrains Mono', family: 'JetBrains Mono' }
 ]
 
+// Custom uploaded fonts
+const customFonts = ref([])
+
+// Handle font upload
+function handleFontUpload(font) {
+  customFonts.value.push(font)
+}
+
 // Export sizes for different platforms
 const exportSizes = [
   { name: 'Instagram Square', width: 1080, height: 1080 },
@@ -79,6 +87,8 @@ const previewStyle = computed(() => ({
               v-model:background="constraints.background"
               v-model:typeface="constraints.typeface"
               :typefaces="typefaces"
+              :custom-fonts="customFonts"
+              @upload-font="handleFontUpload"
             />
 
             <ExportPanel

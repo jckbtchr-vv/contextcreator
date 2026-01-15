@@ -1,64 +1,93 @@
 <script setup>
-import { computed } from 'vue'
+import { ref } from 'vue'
 
 const props = defineProps({
   foreground: String,
   background: String,
   typeface: String,
-  typefaces: Array
+  typefaces: Array,
+  customFonts: Array
 })
 
 const emit = defineEmits([
   'update:foreground',
   'update:background',
-  'update:typeface'
+  'update:typeface',
+  'upload-font'
 ])
 
-// Preset color pairs (VV-inspired)
-const presets = [
-  { name: 'Classic', fg: '#ffffff', bg: '#000000' },
-  { name: 'Inverted', fg: '#000000', bg: '#ffffff' },
-  { name: 'Warm', fg: '#f5f5dc', bg: '#1a1a1a' },
-  { name: 'Blue', fg: '#e0f0ff', bg: '#0a1628' },
-  { name: 'Amber', fg: '#ffd700', bg: '#1a1400' },
-  { name: 'Mint', fg: '#00ff88', bg: '#001a0d' }
-]
-
-function applyPreset(preset) {
-  emit('update:foreground', preset.fg)
-  emit('update:background', preset.bg)
-}
+const fontFileInput = ref(null)
+const isLoadingFont = ref(false)
+const fontError = ref('')
 
 function swapColors() {
   const temp = props.foreground
   emit('update:foreground', props.background)
   emit('update:background', temp)
 }
+
+function triggerFontUpload() {
+  fontFileInput.value?.click()
+}
+
+async function handleFontUpload(event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+
+  // Validate file type
+  const validTypes = ['.ttf', '.otf', '.woff', '.woff2']
+  const extension = '.' + file.name.split('.').pop().toLowerCase()
+  if (!validTypes.includes(extension)) {
+    fontError.value = 'Invalid file type. Use TTF, OTF, WOFF, or WOFF2'
+    return
+  }
+
+  isLoadingFont.value = true
+  fontError.value = ''
+
+  try {
+    // Read the file as ArrayBuffer
+    const buffer = await file.arrayBuffer()
+
+    // Generate a font family name from the filename
+    const fontName = file.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9]/g, '-')
+    const fontFamily = `custom-${fontName}-${Date.now()}`
+
+    // Create and load the font
+    const fontFace = new FontFace(fontFamily, buffer)
+    await fontFace.load()
+
+    // Add to document fonts
+    document.fonts.add(fontFace)
+
+    // Emit event to parent with font info
+    emit('upload-font', {
+      name: file.name.replace(/\.[^/.]+$/, ''),
+      family: fontFamily
+    })
+
+    // Auto-select the newly uploaded font
+    emit('update:typeface', fontFamily)
+
+  } catch (err) {
+    console.error('Font loading error:', err)
+    fontError.value = 'Failed to load font'
+  } finally {
+    isLoadingFont.value = false
+    // Reset input so same file can be selected again
+    event.target.value = ''
+  }
+}
+
+// Combined list of all fonts (built-in + custom)
+const allFonts = () => {
+  return [...(props.typefaces || []), ...(props.customFonts || [])]
+}
 </script>
 
 <template>
   <div class="constraint-panel card">
     <h3 class="panel-title">Constraints</h3>
-
-    <!-- Color Presets -->
-    <div class="section">
-      <label>Presets</label>
-      <div class="presets">
-        <button
-          v-for="preset in presets"
-          :key="preset.name"
-          class="preset-btn"
-          :style="{
-            '--preset-fg': preset.fg,
-            '--preset-bg': preset.bg
-          }"
-          @click="applyPreset(preset)"
-          :title="preset.name"
-        >
-          <span class="preset-preview"></span>
-        </button>
-      </div>
-    </div>
 
     <!-- Foreground Color -->
     <div class="section">
@@ -115,14 +144,26 @@ function swapColors() {
         :value="typeface"
         @change="emit('update:typeface', $event.target.value)"
       >
-        <option
-          v-for="tf in typefaces"
-          :key="tf.family"
-          :value="tf.family"
-          :style="{ fontFamily: tf.family }"
-        >
-          {{ tf.name }}
-        </option>
+        <optgroup label="Built-in">
+          <option
+            v-for="tf in typefaces"
+            :key="tf.family"
+            :value="tf.family"
+            :style="{ fontFamily: tf.family }"
+          >
+            {{ tf.name }}
+          </option>
+        </optgroup>
+        <optgroup v-if="customFonts?.length" label="Custom">
+          <option
+            v-for="tf in customFonts"
+            :key="tf.family"
+            :value="tf.family"
+            :style="{ fontFamily: tf.family }"
+          >
+            {{ tf.name }}
+          </option>
+        </optgroup>
       </select>
 
       <!-- Font Preview -->
@@ -132,6 +173,27 @@ function swapColors() {
       >
         Aa Bb Cc 123
       </div>
+
+      <!-- Upload Custom Font -->
+      <input
+        ref="fontFileInput"
+        type="file"
+        accept=".ttf,.otf,.woff,.woff2"
+        @change="handleFontUpload"
+        style="display: none"
+      />
+      <button
+        class="upload-font-btn"
+        @click="triggerFontUpload"
+        :disabled="isLoadingFont"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+        </svg>
+        {{ isLoadingFont ? 'Loading...' : 'Upload Font' }}
+      </button>
+      <p v-if="fontError" class="font-error">{{ fontError }}</p>
+      <p class="font-hint">TTF, OTF, WOFF, WOFF2</p>
     </div>
   </div>
 </template>
@@ -155,40 +217,6 @@ function swapColors() {
 
 .section:last-child {
   margin-bottom: 0;
-}
-
-/* Presets */
-.presets {
-  display: flex;
-  gap: var(--space-sm);
-  flex-wrap: wrap;
-}
-
-.preset-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--preset-bg);
-  cursor: pointer;
-  padding: 0;
-  overflow: hidden;
-  transition: transform var(--transition-fast);
-}
-
-.preset-btn:hover {
-  transform: scale(1.1);
-}
-
-.preset-preview {
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    135deg,
-    var(--preset-bg) 50%,
-    var(--preset-fg) 50%
-  );
 }
 
 /* Color Input */
@@ -263,5 +291,46 @@ select {
   font-size: 1.25rem;
   text-align: center;
   letter-spacing: 0.05em;
+}
+
+/* Upload Font Button */
+.upload-font-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  width: 100%;
+  margin-top: var(--space-sm);
+  padding: var(--space-sm);
+  background: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.upload-font-btn:hover:not(:disabled) {
+  background: var(--color-border);
+}
+
+.upload-font-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.font-hint {
+  margin-top: var(--space-xs);
+  font-size: 0.625rem;
+  color: var(--color-accent);
+  text-align: center;
+}
+
+.font-error {
+  margin-top: var(--space-xs);
+  font-size: 0.75rem;
+  color: #ff4444;
+  text-align: center;
 }
 </style>
