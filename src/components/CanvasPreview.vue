@@ -668,10 +668,8 @@ defineExpose({
         class="mode-btn"
         :class="{ active: currentVisual === mode.id }"
         @click="setVisualMode(mode.id)"
-        :title="mode.name"
       >
-        <span class="mode-icon">{{ mode.icon }}</span>
-        <span class="mode-name">{{ mode.name }}</span>
+        {{ mode.id.toUpperCase() }}
       </button>
     </div>
 
@@ -680,56 +678,22 @@ defineExpose({
       <div ref="canvasContainer" class="canvas-container"></div>
     </div>
 
-    <!-- Generate/Regenerate Button -->
-    <button
-      class="btn regenerate-btn"
-      :class="{ generating: isGenerating }"
-      @click="regenerate"
-      :disabled="isGenerating || (currentVisual === 'ai' && !apiKey)"
-    >
-      <svg v-if="!isGenerating" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path v-if="currentVisual === 'ai'" d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-        <template v-else>
-          <path d="M23 4v6h-6M1 20v-6h6"/>
-          <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-        </template>
-      </svg>
-      <svg v-else class="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/>
-      </svg>
-      {{ isGenerating ? 'Generating...' : (currentVisual === 'ai' ? 'Generate' : 'Regenerate') }}
-    </button>
-
-    <!-- History Navigation for AI mode -->
-    <div v-if="currentVisual === 'ai' && generationHistory.length > 0" class="history-nav">
+    <!-- Controls Row -->
+    <div class="controls">
       <button
-        class="history-btn"
-        :disabled="!canGoBack"
-        @click="goBack"
-        title="Previous version"
+        class="btn"
+        @click="regenerate"
+        :disabled="isGenerating || (currentVisual === 'ai' && !apiKey)"
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M15 18l-6-6 6-6"/>
-        </svg>
+        {{ isGenerating ? 'GENERATING...' : (currentVisual === 'ai' ? '✦ GENERATE' : '↻ REGENERATE') }}
       </button>
 
-      <div class="history-info">
-        <span class="history-position">{{ historyIndex + 1 }} / {{ generationHistory.length }}</span>
-        <span v-if="currentHistoryItem" class="history-prompt" :title="currentHistoryItem.prompt">
-          {{ currentHistoryItem.prompt.slice(0, 30) }}{{ currentHistoryItem.prompt.length > 30 ? '...' : '' }}
-        </span>
+      <!-- History Navigation for AI mode -->
+      <div v-if="currentVisual === 'ai' && generationHistory.length > 0" class="history-nav">
+        <button class="nav-btn" :disabled="!canGoBack" @click="goBack">←</button>
+        <span class="history-pos">{{ historyIndex + 1 }}/{{ generationHistory.length }}</span>
+        <button class="nav-btn" :disabled="!canGoForward" @click="goForward">→</button>
       </div>
-
-      <button
-        class="history-btn"
-        :disabled="!canGoForward"
-        @click="goForward"
-        title="Next version"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M9 18l6-6-6-6"/>
-        </svg>
-      </button>
     </div>
   </div>
 </template>
@@ -738,150 +702,93 @@ defineExpose({
 .canvas-preview {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: var(--space-sm);
+  flex: 1;
 }
 
 .mode-selector {
   display: flex;
   gap: var(--space-xs);
   flex-wrap: wrap;
-  padding: var(--space-sm);
-  background: var(--color-muted);
-  border-radius: var(--radius-md);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-sm);
 }
 
 .mode-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
   padding: var(--space-xs) var(--space-sm);
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
   color: var(--color-accent);
   cursor: pointer;
-  font-size: 0.75rem;
-  transition: all var(--transition-fast);
+  font-size: 12px;
+  font-family: var(--font-mono);
 }
 
 .mode-btn:hover {
   color: var(--color-fg);
+  border-color: var(--color-fg);
 }
 
 .mode-btn.active {
-  background: var(--color-bg);
-  border-color: var(--color-border);
-  color: var(--color-fg);
-}
-
-.mode-icon {
-  font-size: 1rem;
-  line-height: 1;
-}
-
-.mode-name {
-  font-weight: 500;
+  background: var(--color-fg);
+  color: var(--color-bg);
+  border-color: var(--color-fg);
 }
 
 .canvas-wrapper {
+  flex: 1;
   display: flex;
   justify-content: center;
   align-items: center;
-  background: var(--color-muted);
-  border-radius: var(--radius-md);
-  padding: var(--space-lg);
+  border: 1px solid var(--color-border);
   min-height: 400px;
-}
-
-.canvas-container {
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
 }
 
 .canvas-container :deep(canvas) {
   display: block;
   max-width: 100%;
-  height: auto;
+  max-height: 100%;
 }
 
-.regenerate-btn {
-  align-self: flex-start;
-}
-
-.regenerate-btn.generating {
-  opacity: 0.7;
-  cursor: wait;
-}
-
-.regenerate-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.spinner {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* History Navigation */
-.history-nav {
+.controls {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: var(--space-sm) var(--space-md);
-  background: var(--color-muted);
-  border-radius: var(--radius-md);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-sm);
 }
 
-.history-btn {
+.history-nav {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-fg);
-  cursor: pointer;
-  transition: all var(--transition-fast);
+  gap: var(--space-xs);
+  margin-left: auto;
 }
 
-.history-btn:hover:not(:disabled) {
+.nav-btn {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.nav-btn:hover:not(:disabled) {
   border-color: var(--color-fg);
 }
 
-.history-btn:disabled {
+.nav-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
 }
 
-.history-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-}
-
-.history-position {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--color-fg);
-}
-
-.history-prompt {
-  font-size: 0.625rem;
+.history-pos {
+  font-size: 12px;
   color: var(--color-accent);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 200px;
+  min-width: 40px;
+  text-align: center;
 }
 </style>
