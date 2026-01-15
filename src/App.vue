@@ -43,15 +43,8 @@ function handleFontUpload(font) {
   customFonts.value.push(font)
 }
 
-// Export sizes for different platforms
-const exportSizes = [
-  { name: '1080x1080', width: 1080, height: 1080 },
-  { name: '1080x1920', width: 1080, height: 1920 },
-  { name: '1200x675', width: 1200, height: 675 },
-  { name: '1200x630', width: 1200, height: 630 }
-]
-
-const selectedExportSize = ref(exportSizes[0])
+// Fixed export size
+const exportSize = { name: '1080×1440', width: 1080, height: 1440 }
 
 // Saved iterations
 const savedIterations = ref([])
@@ -120,8 +113,6 @@ function deleteIteration(id) {
 
         <ExportPanel
           :canvas-ref="canvasRef"
-          :sizes="exportSizes"
-          v-model:selected-size="selectedExportSize"
           :constraints="constraints"
         />
       </aside>
@@ -132,7 +123,7 @@ function deleteIteration(id) {
           ref="canvasRef"
           :constraints="constraints"
           :prompt="prompt"
-          :export-size="selectedExportSize"
+          :export-size="exportSize"
           :api-key="apiKey"
           @save="handleSave"
         />

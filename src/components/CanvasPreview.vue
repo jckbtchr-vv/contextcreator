@@ -463,11 +463,7 @@ defineExpose({
   <div class="canvas-preview" @click="selectedLabel = null">
     <!-- Canvas Container with Labels Overlay -->
     <div ref="canvasWrapper" class="canvas-wrapper">
-      <div
-        ref="canvasContainer"
-        class="canvas-container"
-        :style="{ aspectRatio: exportSize.width + '/' + exportSize.height }"
-      ></div>
+      <div ref="canvasContainer" class="canvas-container"></div>
 
       <!-- Labels Overlay -->
       <div class="labels-overlay">
@@ -575,15 +571,13 @@ defineExpose({
   display: flex;
   justify-content: center;
   align-items: center;
-  border: 1px solid var(--color-border);
   min-height: 400px;
   position: relative;
 }
 
 .canvas-container {
   position: relative;
-  border: 2px solid var(--color-fg);
-  box-sizing: content-box;
+  border: 1px solid var(--color-border);
 }
 
 .canvas-container :deep(canvas) {
