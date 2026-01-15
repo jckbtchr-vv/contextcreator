@@ -383,13 +383,13 @@ watch(() => props.constraints, () => {
   }
 }, { deep: true })
 
-// Watch for prompt changes - redraw after spaces (word boundaries)
+// Watch for prompt changes - generate after spaces (word boundaries)
 watch(() => props.prompt, (newVal, oldVal) => {
-  // Redraw when space is typed (end of word)
-  if (newVal && newVal.endsWith(' ') && p5Instance) {
-    p5Instance.redraw()
+  // Generate when space is typed (end of word) and we have an API key
+  if (newVal && newVal.endsWith(' ') && props.apiKey && !isGenerating.value) {
+    generateAIVisual()
   }
-  // Also redraw when prompt is cleared
+  // Redraw when prompt is cleared (to update placeholder)
   if (!newVal && oldVal && p5Instance) {
     p5Instance.redraw()
   }
