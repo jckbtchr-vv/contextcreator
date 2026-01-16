@@ -6,8 +6,8 @@ const props = defineProps({
   constraints: Object
 })
 
-// Fixed export size
-const exportSize = { width: 1080, height: 1440, name: '1080×1440' }
+// Fixed export size (1:1 square to match preview)
+const exportSize = { width: 1080, height: 1080, name: '1080×1080' }
 
 const isExporting = ref(false)
 const exportFormat = ref('png')

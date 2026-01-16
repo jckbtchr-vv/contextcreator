@@ -43,8 +43,8 @@ function handleFontUpload(font) {
   customFonts.value.push(font)
 }
 
-// Fixed export size
-const exportSize = { name: '1080×1440', width: 1080, height: 1440 }
+// Fixed export size (1:1 square to match preview)
+const exportSize = { name: '1080×1080', width: 1080, height: 1080 }
 
 // Saved iterations
 const savedIterations = ref([])
