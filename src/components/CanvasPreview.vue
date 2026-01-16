@@ -692,6 +692,8 @@ defineExpose({
   display: inline-block;
   min-width: 20px;
   outline: none;
+  direction: ltr;
+  unicode-bidi: plaintext;
 }
 
 .label.editing .label-text {
