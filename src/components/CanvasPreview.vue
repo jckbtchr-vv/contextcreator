@@ -359,64 +359,42 @@ function getCanvas() {
 // Export canvas at specified size (with labels)
 function exportCanvas(width, height) {
   return new Promise((resolve) => {
-    const exportContainer = document.createElement('div')
-    exportContainer.style.position = 'absolute'
-    exportContainer.style.left = '-9999px'
-    document.body.appendChild(exportContainer)
-
-    const exportSketch = (p) => {
-      p.setup = () => {
-        const canvas = p.createCanvas(width, height)
-        canvas.parent(exportContainer)
-        p.textFont(props.constraints.typeface)
-        p.noLoop()
-
-        const bg = hexToRgb(props.constraints.background)
-        const fg = hexToRgb(props.constraints.foreground)
-
-        p.background(bg.r, bg.g, bg.b)
-        p.fill(fg.r, fg.g, fg.b)
-        p.stroke(fg.r, fg.g, fg.b)
-
-        const scale = width / 600
-
-        // Draw AI visual
-        if (aiGeneratedCode.value) {
-          try {
-            p.push()
-            p.scale(scale)
-            const drawFunc = new Function('p', aiGeneratedCode.value)
-            drawFunc(p)
-            p.pop()
-          } catch (err) {
-            console.error('AI code execution error during export:', err)
-          }
-        }
-
-        // Draw labels
-        p.fill(fg.r, fg.g, fg.b)
-        p.noStroke()
-        labels.value.forEach(label => {
-          const x = (label.x / 100) * width
-          const y = (label.y / 100) * height
-          const fontSize = 16 * label.scale * scale
-
-          p.textSize(fontSize)
-          p.textAlign(
-            label.align === 'left' ? p.LEFT : label.align === 'right' ? p.RIGHT : p.CENTER,
-            p.CENTER
-          )
-          p.text(label.text, x, y)
-        })
-
-        const dataUrl = canvas.elt.toDataURL('image/png')
-        p.remove()
-        document.body.removeChild(exportContainer)
-        resolve(dataUrl)
-      }
+    // Get the actual canvas element
+    const sourceCanvas = canvasContainer.value?.querySelector('canvas')
+    if (!sourceCanvas) {
+      resolve(null)
+      return
     }
 
-    new p5(exportSketch)
+    // Create export canvas
+    const exportCanvas = document.createElement('canvas')
+    exportCanvas.width = width
+    exportCanvas.height = height
+    const ctx = exportCanvas.getContext('2d')
+
+    // Scale factor from preview to export
+    const scale = width / sourceCanvas.width
+
+    // Draw the source canvas scaled up
+    ctx.drawImage(sourceCanvas, 0, 0, width, height)
+
+    // Draw labels
+    const fg = hexToRgb(props.constraints.foreground)
+    ctx.fillStyle = `rgb(${fg.r}, ${fg.g}, ${fg.b})`
+    ctx.textBaseline = 'middle'
+
+    labels.value.forEach(label => {
+      const x = (label.x / 100) * width
+      const y = (label.y / 100) * height
+      const fontSize = 16 * label.scale * scale
+
+      ctx.font = `${fontSize}px "Departure Mono", monospace`
+      ctx.textAlign = label.align
+
+      ctx.fillText(label.text, x, y)
+    })
+
+    resolve(exportCanvas.toDataURL('image/png'))
   })
 }
 
