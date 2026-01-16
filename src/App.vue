@@ -4,6 +4,7 @@ import ConstraintPanel from './components/ConstraintPanel.vue'
 import CanvasPreview from './components/CanvasPreview.vue'
 import ExportPanel from './components/ExportPanel.vue'
 import ApiSettingsPanel from './components/ApiSettingsPanel.vue'
+import { getWordSuggestions } from './services/geminiService'
 
 // Constraints state
 const constraints = reactive({
@@ -26,6 +27,46 @@ watch(apiKey, (newKey) => {
 
 // Prompt for visual generation
 const prompt = ref('')
+
+// Word suggestions
+const suggestions = ref([])
+const isLoadingSuggestions = ref(false)
+let suggestionTimeout = null
+
+// Fetch suggestions with debounce
+async function fetchSuggestions() {
+  if (!apiKey.value) {
+    suggestions.value = []
+    return
+  }
+
+  isLoadingSuggestions.value = true
+  try {
+    const results = await getWordSuggestions(apiKey.value, prompt.value)
+    suggestions.value = results
+  } catch {
+    suggestions.value = []
+  } finally {
+    isLoadingSuggestions.value = false
+  }
+}
+
+// Watch prompt and fetch suggestions (debounced)
+watch(prompt, () => {
+  if (suggestionTimeout) clearTimeout(suggestionTimeout)
+  suggestionTimeout = setTimeout(fetchSuggestions, 800)
+})
+
+// Also fetch when API key changes
+watch(apiKey, () => {
+  if (apiKey.value) fetchSuggestions()
+})
+
+// Handle clicking a suggestion
+function useSuggestion(word) {
+  const currentPrompt = prompt.value.trim()
+  prompt.value = currentPrompt ? `${currentPrompt} ${word}` : word
+}
 
 // Canvas reference for export
 const canvasRef = ref(null)
@@ -136,6 +177,19 @@ function deleteIteration(id) {
             placeholder="DESCRIBE THE VISUAL..."
             rows="2"
           ></textarea>
+
+          <!-- Word Suggestions -->
+          <div v-if="suggestions.length > 0 || isLoadingSuggestions" class="suggestions">
+            <span v-if="isLoadingSuggestions" class="suggestions-loading">...</span>
+            <button
+              v-for="word in suggestions"
+              :key="word"
+              class="suggestion-chip"
+              @click="useSuggestion(word)"
+            >
+              {{ word }}
+            </button>
+          </div>
         </div>
       </main>
 
@@ -251,6 +305,35 @@ function deleteIteration(id) {
 
 .prompt-section textarea {
   resize: none;
+}
+
+/* Suggestions */
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+}
+
+.suggestions-loading {
+  color: var(--color-accent);
+  font-size: 12px;
+}
+
+.suggestion-chip {
+  padding: var(--space-xs) var(--space-sm);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.suggestion-chip:hover {
+  border-color: var(--color-fg);
+  color: var(--color-fg);
 }
 
 /* Iterations List */
