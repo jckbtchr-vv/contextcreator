@@ -427,10 +427,10 @@ watch(() => props.constraints, () => {
   }
 }, { deep: true })
 
-// Watch for prompt changes - generate after spaces (word boundaries)
+// Watch for prompt changes - generate on every keypress
 watch(() => props.prompt, (newVal, oldVal) => {
-  // Generate when space is typed (end of word) and we have an API key
-  if (newVal && newVal.endsWith(' ') && props.apiKey && !isGenerating.value) {
+  // Generate on any change when we have an API key and prompt
+  if (newVal && newVal.trim() && props.apiKey && !isGenerating.value) {
     generateAIVisual()
   }
   // Redraw when prompt is cleared (to update placeholder)
